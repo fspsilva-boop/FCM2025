@@ -8,5 +8,5 @@ Pessoa A alterando
 continuando
 
 1
-2
-3
+
+código do gráfico modelo linear;
