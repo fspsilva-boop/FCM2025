@@ -1,0 +1,254 @@
+---
+title: "Gráficos - FCM"
+author: "Felipe Paes"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+library(tidyverse)
+library(rcartocolor)
+```
+
+## GGPLOT
+
+O conjunto de dados é composto de variáveis quantitativas e qualitativas. A tabela a seguir mostra o resumo dos dados.
+
+```{r, echo=FALSE}
+dados <- read.csv("Pokemon_full.csv")
+
+summary(dados)
+```
+
+### Gráfico de caixa
+
+```{r, fig.width=10}
+library(tidyverse)
+
+df <- dados %>%
+  mutate(
+    classe_altura = case_when(
+      height < 5 ~ "Baixinho",
+      height < 50 ~ "Pequeno",
+      height < 100 ~ "Médio",
+      TRUE ~ "Altão"
+    )
+  ) %>%
+  mutate(
+    classe_altura = factor(classe_altura, levels = c("Baixinho", "Pequeno", "Médio", "Altão"))
+  )
+
+  ggplot(df, aes(x = classe_altura, y = weight, fill = classe_altura))+
+    geom_violin()+
+    geom_boxplot(width = 0.2, fill = "white")+
+    labs(x = "Classe - Altura", y = "Peso")+
+    scale_y_continuous(trans = "log10")+
+    theme_bw()+
+    theme(
+      axis.text = element_text(size = 14),
+      axis.title = element_text(size = 14, face = "bold"),
+      legend.position = "none"
+    )
+```
+
+### Gráfico de pontos
+
+
+```{r, fig.width=12}
+library(tidyverse)
+
+
+  ggplot(df, aes(x = weight, y = height, color = classe_altura))+
+    geom_point(alpha = 0.4, size = 2)+
+    labs(x = "Peso", y = "Altura", color = "Classe - Altura")+
+    scale_y_continuous(trans = "log10")+
+    guides(color = guide_legend(override.aes = list(size = 4)))+
+    theme_bw()+
+    theme(
+      axis.text = element_text(size = 14),
+      axis.title = element_text(size = 14, face = "bold"),
+      legend.position = "right",
+      legend.text = element_text(size = 14),
+      legend.title = element_text(size = 16)
+    )
+
+
+```
+
+### Gráficos facetados com dois eixos
+
+```{r}
+
+df %>%
+  group_by(classe_altura) %>%
+  summarise(
+    media_h = mean(height),
+    media_w = mean(weight)
+  ) %>%
+  pivot_longer(cols = c(2, 3), values_to = "Valor", names_to = "Tipo") %>%
+  ggplot(aes(x = Tipo, y = Valor, fill = classe_altura))+
+  geom_col()+
+  facet_wrap(.~classe_altura)+
+  theme_bw()+
+    theme(
+      axis.text = element_text(size = 14),
+      axis.title = element_text(size = 14, face = "bold"),
+      legend.position = "none",
+      legend.text = element_text(size = 14),
+      legend.title = element_text(size = 16)
+    )
+  
+
+```
+
+
+```{r}
+df %>%
+  group_by(classe_altura) %>%
+  summarise(
+    media_h = mean(height),
+    media_w = mean(weight)
+  ) %>%
+  pivot_longer(cols = c(2, 3), values_to = "Valor", names_to = "Tipo") %>%
+  ggplot(aes(x = classe_altura, y = Valor, fill = Tipo))+
+  geom_col(position = position_dodge2())+
+  labs(x = "Classe", y = "Valor", fill = "Média")+
+  #facet_wrap(.~classe_altura)+
+  scale_y_continuous(
+    sec.axis = sec_axis(~./37, name="Média de Altura")
+  )
+  theme_bw()+
+    theme(
+      axis.text = element_text(size = 14),
+      axis.title = element_text(size = 14, face = "bold"),
+      legend.position = "right",
+      legend.text = element_text(size = 14),
+      legend.title = element_text(size = 16)
+    )
+```
+
+
+### Mapa de dengue - SP
+
+```{r, echo=TRUE}
+library(sf)
+```
+
+
+```{r}
+library(tidyverse)
+dados <- read.csv2("dengue_sp.csv")
+```
+
+```{r}
+head(dados)
+nrow(dados)
+```
+
+
+```{r}
+# trocar o nome da primeira coluna
+dados <- dados %>% rename(municipio = 1)
+names(dados)
+```
+
+Garantir que, no conjunto de dados, só tenha municípios válidos:
+
+```{r}
+glimpse(dados)
+
+df <- dados %>% 
+  filter(grepl("\\d{6}", municipio)) %>% 
+  mutate(across(starts_with("X"), as.integer)) %>% 
+  pivot_longer(2:13, names_to = "Ano", values_to = "Casos") %>% 
+  filter(Ano != "Total") %>% 
+  mutate(
+    Ano = str_remove(Ano, "X")
+  ) %>% 
+  mutate(
+    Cod = str_extract(municipio, "^\\d{6}")
+  )
+```
+
+Lendo os dados da população:
+
+```{r}
+pop <- read.csv2("tabela4709.csv", skip = 3)
+names(pop) <- c("Cod", "Municipio", "Populacao")
+head(pop)
+
+pop <- pop %>% 
+  mutate(
+    Cod = str_remove(Cod, "\\d$")
+  )
+```
+
+Calculando taxas
+
+```{r}
+df <- df %>% 
+  left_join(pop) %>% 
+  mutate(
+    taxa = Casos/Populacao*10000
+  )
+
+glimpse(df)
+```
+
+Lendo o arquivo SHP
+
+```{r}
+library(sf)
+sp_shp <- read_sf("shp/cidades_SP.shp")
+
+plot(sp_shp$geometry)
+```
+
+Juntando os dados
+
+```{r}
+df <- sp_shp %>% 
+  select(CD_GEOCODM, geometry) %>% 
+  mutate(
+    Cod = str_remove(CD_GEOCODM, "\\d$")
+  ) %>% 
+  right_join(df)
+```
+```{r}
+df
+```
+
+Gráfico
+
+```{r}
+ggplot(df)+
+  geom_sf(aes(fill = taxa))
+```
+
+```{r}
+library(ggplot2)
+library(viridis)
+
+ggplot(df) +
+  geom_sf(aes(color = taxa)) +
+  scale_color_viridis(option = "plasma") +
+  labs(color = "Taxa") +
+  facet_wrap(~Ano) +
+  theme_minimal()
+
+```
+
+
+
+
+
+
+
+
+
+
+
